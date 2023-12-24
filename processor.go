@@ -6,11 +6,13 @@ import (
 )
 
 var processors []Processor
+var log_count int = 0
 
 type Processor struct {
 	ID             int
 	processors_ids []int
 	chan_messages  chan Message
+	chan_failure   chan bool
 }
 
 func NewProcessor(id int) *Processor {
@@ -18,41 +20,39 @@ func NewProcessor(id int) *Processor {
 		ID:             id,
 		processors_ids: []int{},
 		chan_messages:  make(chan Message),
+		chan_failure:   make(chan bool),
+	}
+	msg := Message{
+		SenderID:    temp_processor.ID,
+		MessageType: 0,
+		Content:     fmt.Sprintf("New Processor: {%d}", temp_processor.ID),
 	}
 	for _, processor := range processors {
-		processor.chan_messages <- Message{
-			SenderID:    temp_processor.ID,
-			MessageType: 0,
-			Content:     fmt.Sprintf("New Processor: {%d}", temp_processor.ID),
-		}
+		go temp_processor.SendMessage(processor.ID, msg)
 	}
 	processors = append(processors, temp_processor)
+	go temp_processor.Run()
 	return &temp_processor
 }
 
-func GetChannelByID(id int) (chan Message, error) {
-	for _, processor := range processors {
-		if processor.ID == id {
-			return processor.chan_messages, nil
-		}
+func (self *Processor) SendMessage(id_receiver int, msg Message) {
+	if id_receiver == self.ID {
+		fmt.Println("Can't send message to self")
+		return
 	}
-	return nil, errors.New("Processor not found!")
-}
-
-func (self *Processor) SendMessage(id_receiver int, msg Message) error {
-	chan_receiver, err := GetChannelByID(id_receiver)
-
-	if err != nil {
-		return err
-	}
-
-	chan_receiver <- msg
+	chan_receiver, err := getChannelById(id_receiver)
 
 	if msg.MessageType != 1 {
 		self.processors_ids = deleteElement(self.processors_ids, id_receiver)
 	}
 
-	return nil
+	if err != nil {
+		self.LogMessage(err.Error())
+		self.processors_ids = deleteElement(self.processors_ids, id_receiver)
+	} else {
+		chan_receiver <- msg
+		self.LogMessage(fmt.Sprintf("Message sent to %d:%s", id_receiver, msg.toString()))
+	}
 }
 
 func (self *Processor) ReceiveMessageCreation(msg Message) {
@@ -104,6 +104,7 @@ func (self *Processor) Run() {
 	for {
 		select {
 		case msg := <-self.chan_messages:
+			self.LogMessage(fmt.Sprintf("Received message from %d:%s", msg.SenderID, msg.toString()))
 			switch msg.MessageType {
 			case 0:
 				self.ReceiveMessageCreation(msg)
@@ -117,8 +118,16 @@ func (self *Processor) Run() {
 			default:
 				self.ReceiveMessageDefault(msg)
 			}
+		case <-self.chan_failure:
+			break
 		}
 	}
+}
+
+func (self *Processor) LogMessage(msg string) {
+	fmt.Println(fmt.Sprintf("Processor %d: %s", self.ID, msg))
+	log_count++
+	//fmt.Println(log_count)
 }
 
 func deleteElement(slice []int, valueToDelete int) []int {
@@ -128,4 +137,44 @@ func deleteElement(slice []int, valueToDelete int) []int {
 		}
 	}
 	return slice
+}
+
+func printProcessorsIds() {
+	fmt.Print("Active processors: ")
+	for _, processor := range processors {
+		fmt.Print(fmt.Sprintf("%d ", processor.ID))
+	}
+	fmt.Println()
+}
+
+func deleteProcessorById(id int) error {
+	for i, processor := range processors {
+		if processor.ID == id {
+			processor.LogMessage("Removed from system. Shutting down...")
+			processor.chan_failure <- true
+			processors = append(processors[:i], processors[i+1:]...)
+
+			return nil
+		}
+	}
+
+	return errors.New("Processor not found")
+}
+
+func getChannelById(id int) (chan Message, error) {
+	for _, processor := range processors {
+		if processor.ID == id {
+			return processor.chan_messages, nil
+		}
+	}
+	return nil, errors.New(fmt.Sprintf("Processor %d not found!", id))
+}
+
+func getProcessorById(id int) (*Processor, error) {
+	for _, processor := range processors {
+		if processor.ID == id {
+			return &processor, nil
+		}
+	}
+	return nil, errors.New(fmt.Sprintf("Processor %d not found!", id))
 }
