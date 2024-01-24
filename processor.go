@@ -7,4 +7,5 @@ type Processor struct {
 	connected_edges []string // names of connected edges
 	annexed_token   Token
 	max_hop         int
+	chased          string
 }
