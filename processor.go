@@ -44,13 +44,13 @@ func (self *Processor) Run() {
 				if msg.hop_counter != -1 {
 					// annexing mode
 					if self.annexing_token == msg.token && CheckFinished(msg.token.processor_id) {
-						// c2
+						// a2
 						leader_elected = true
 						leader_id = msg.token.processor_id
 						break
 					} else if msg.token.phase > self.annexing_token.phase ||
 						(msg.token == self.annexing_token && self.chased == -1 && self.candidate.processor_id == "") {
-						// c1
+						// a1
 						self.annexing_token = msg.token
 						msg.hop_counter++
 						self.max_hop = msg.hop_counter
@@ -63,10 +63,10 @@ func (self *Processor) Run() {
 							self.last_sent_channel = edge
 						}
 					} else if msg.token.phase < self.annexing_token.phase {
-						// c3
+						// a3
 						// do nothing
 					} else if msg.token.phase == self.candidate.phase {
-						// c4
+						// a4
 						self.annexing_token = Token{
 							phase:        msg.token.phase + 1,
 							processor_id: self.ID,
@@ -86,10 +86,10 @@ func (self *Processor) Run() {
 							self.last_sent_channel = edge
 						}
 					} else if msg.token.phase == self.annexing_token.phase && (self.chased == msg.token.phase || self.annexing_token.processor_id > msg.token.processor_id) {
-						// c5
+						// a5
 						self.candidate = msg.token
 					} else if msg.token.phase == self.annexing_token.phase && self.annexing_token.processor_id < msg.token.processor_id && self.chased == -1 {
-						// c6
+						// a6
 						self.chased = msg.token.phase
 						self.last_sent_channel <- Attachment{
 							token:        msg.token,
@@ -99,7 +99,47 @@ func (self *Processor) Run() {
 					}
 				} else if msg.last_max_hop != -1 {
 					// chasing mode
-
+					// c1
+					if msg.token.phase == self.annexing_token.phase && msg.token.processor_id == self.annexing_token.processor_id &&
+						msg.last_max_hop < self.max_hop &&
+						self.chased == -1 &&
+						self.candidate.phase != msg.token.phase {
+						self.chased = msg.token.phase
+						self.last_sent_channel <- Attachment{
+							token:        msg.token,
+							hop_counter:  -1,
+							last_max_hop: self.max_hop,
+						}
+					} else if msg.token.phase < self.annexing_token.phase {
+						// c2
+						// do nothing
+					} else if self.candidate.phase == msg.token.phase {
+						// c3
+						self.annexing_token = Token{
+							phase:        msg.token.phase + 1,
+							processor_id: self.ID,
+						}
+						msg.hop_counter = 0
+						self.max_hop = msg.hop_counter
+						self.candidate = Token{
+							phase:        -1,
+							processor_id: "",
+						}
+						for _, edge := range self.connected_edges {
+							edge <- Attachment{
+								token:        self.annexing_token,
+								hop_counter:  self.max_hop,
+								last_max_hop: -1,
+							}
+							self.last_sent_channel = edge
+						}
+					} else if (msg.token.phase == self.annexing_token.phase && msg.token.processor_id == self.annexing_token.processor_id &&
+						(self.chased == msg.token.phase || self.max_hop < msg.last_max_hop)) ||
+						((msg.token.phase != self.annexing_token.phase || msg.token.processor_id != self.annexing_token.processor_id) &&
+							msg.token.phase > self.annexing_token.phase) {
+						self.candidate.phase = msg.token.phase
+						self.candidate.processor_id = msg.token.processor_id
+					}
 				}
 			}
 		}
