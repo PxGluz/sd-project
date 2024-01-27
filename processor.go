@@ -12,6 +12,7 @@ type Processor struct {
 	candidate         Token
 	max_hop           int
 	chased            int
+	leader_id         string
 }
 
 func CheckFinished(token_processor_id string) bool {
@@ -34,6 +35,14 @@ func GetLeader() *Processor {
 	}
 
 	return nil
+}
+
+func AnnounceLeader() {
+	if leader_elected {
+		for _, proc := range list_processors {
+			proc.leader_id = leader_id
+		}
+	}
 }
 
 func (self *Processor) Run() {
