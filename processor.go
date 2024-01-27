@@ -1,8 +1,7 @@
 package main
 
-import "fmt"
-
 var leader_elected bool = false
+var leader_id string = ""
 
 type Processor struct {
 	ID                string
@@ -15,9 +14,26 @@ type Processor struct {
 	chased            int
 }
 
-func CheckFinished() bool {
-	// TODO: Replace with actual check
-	return false
+func CheckFinished(token_processor_id string) bool {
+	for _, proc := range list_processors {
+		if proc.annexing_token.processor_id != token_processor_id {
+			return false
+		}
+	}
+
+	return true
+}
+
+func GetLeader() *Processor {
+	if leader_elected {
+		for _, proc := range list_processors {
+			if proc.ID == leader_id {
+				return &proc
+			}
+		}
+	}
+
+	return nil
 }
 
 func (self *Processor) Run() {
@@ -27,10 +43,10 @@ func (self *Processor) Run() {
 			if !leader_elected {
 				if msg.hop_counter != -1 {
 					// annexing mode
-					if self.annexing_token == msg.token && CheckFinished() {
+					if self.annexing_token == msg.token && CheckFinished(msg.token.processor_id) {
 						// c2
 						leader_elected = true
-						fmt.Println("Leader elected: ", self.ID)
+						leader_id = msg.token.processor_id
 						break
 					} else if msg.token.phase > self.annexing_token.phase ||
 						(msg.token == self.annexing_token && self.chased == -1 && self.candidate.processor_id == "") {
